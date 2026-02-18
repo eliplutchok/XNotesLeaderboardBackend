@@ -43,11 +43,10 @@ node scripts/dailyUpdate.js
 
 ```
 server.js                   Express API server
-models/AllModels.js         Sequelize models (Note, NoteStatus, User, Rating, etc.)
+models/AllModels.js         Sequelize models (Note, NoteStatus, User, NoteBackup)
 routes/                     Route definitions
 controllers/                HTTP request handlers
 services/                   Business logic and database queries
 scripts/                    Daily update pipeline and utility scripts
 docs/                       Documentation
-redacted/                   Archived unused code (mirrored folder structure)
 ```
