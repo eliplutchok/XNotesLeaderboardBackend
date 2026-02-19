@@ -4,6 +4,7 @@ const getTopHandles = require('./getTopHandles');
 async function getTopUsers(limit) {
     try {
       const authorData = await getTopHandles(limit);
+
       const handles = authorData.map(author => author.handle);
   
       if (handles.length > 0) {
@@ -21,7 +22,7 @@ async function getTopUsers(limit) {
         mergedData.forEach((author, index) => {
           author.rank = index + 1;
         });
-  
+
         return mergedData;
       } else {
         return [];

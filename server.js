@@ -8,7 +8,7 @@ const port = process.env.PORT || 3000;
 
 const tweetAuthorRoutes = require('./routes/tweetAuthorRoutes'); 
 
-app.use('/api', tweetAuthorRoutes); // Adjusted to use a single base path
+app.use('/api', tweetAuthorRoutes);
 
 app.get('/', (req, res) => {
   res.send('Hello World!');
