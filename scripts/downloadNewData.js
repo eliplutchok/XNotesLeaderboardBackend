@@ -103,6 +103,10 @@ const resolveLatestDate = async (maxDaysBack = 3) => {
 
 const downloadNewData = async (tsvFolderPath, currentDate) => {
     try {
+        if (!fs.existsSync(tsvFolderPath)) {
+            fs.mkdirSync(tsvFolderPath, { recursive: true });
+        }
+
         if (!currentDate) {
             currentDate = await resolveLatestDate();
         }
