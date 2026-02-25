@@ -2,9 +2,8 @@ name: Daily Update
 
 on:
   schedule:
-    # 5:45 AM EST = 10:45 UTC (temporary for testing, will change to 12 AM PST / 8:00 UTC)
-    - cron: '45 10 * * *'
-  workflow_dispatch: # allows manual trigger from GitHub UI
+    - cron: '0 8 * * *' # 12:00 AM PST
+  workflow_dispatch:
 
 jobs:
   daily-update:

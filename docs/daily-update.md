@@ -4,11 +4,19 @@ The daily update script (`scripts/dailyUpdate.js`) refreshes all note and note s
 
 ## How to Run
 
+Runs automatically at 12:00 AM PST via GitHub Actions (`.github/workflows/daily-update.yml`). Can also be triggered manually from the Actions tab or CLI:
+
+```bash
+gh workflow run "Daily Update"
+```
+
+To run locally:
+
 ```bash
 node scripts/dailyUpdate.js
 ```
 
-The date is auto-detected. The script determines the current date in PST, probes the Community Notes dataset with a HEAD request, and falls back up to 3 previous days if the data isn't available yet (HTTP 404). No manual date editing is needed.
+The date is auto-detected. The script determines the current date in PST, probes the Community Notes dataset with a HEAD request, and falls back up to 3 previous days if the data isn't available yet. No manual date editing is needed.
 
 ## Pipeline Steps
 
