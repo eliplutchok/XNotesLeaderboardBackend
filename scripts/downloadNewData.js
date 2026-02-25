@@ -50,26 +50,86 @@ const downloadAndExtractZip = async (url, tsvFolderPath) => {
     return extractedFiles;
 };
 
+const BASE_URL = 'https://ton.twimg.com/birdwatch-public-data';
+
+const fileUrl = (date, prefix, index) => {
+    const padded = String(index).padStart(5, '0');
+    return `${BASE_URL}/${date}/${prefix}/${prefix}-${padded}.zip`;
+};
+
+const headRequest = (url) => {
+    return new Promise((resolve) => {
+        https.request(url, { method: 'HEAD' }, (res) => {
+            resolve(res.statusCode);
+        }).on('error', () => resolve(0)).end();
+    });
+};
+
+const subtractDays = (dateStr, days) => {
+    const [year, month, day] = dateStr.split('/').map(Number);
+    const d = new Date(year, month - 1, day);
+    d.setDate(d.getDate() - days);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}/${m}/${dd}`;
+};
+
+const discoverFiles = async (date, prefix) => {
+    const urls = [];
+    for (let i = 0; ; i++) {
+        const url = fileUrl(date, prefix, i);
+        const status = await headRequest(url);
+        if (status !== 200) break;
+        urls.push(url);
+    }
+    return urls;
+};
+
+const resolveLatestDate = async (maxDaysBack = 3) => {
+    const today = getCurrentDateInPST();
+    for (let i = 0; i <= maxDaysBack; i++) {
+        const candidate = subtractDays(today, i);
+        console.log(`Probing date ${candidate}...`);
+        const status = await headRequest(fileUrl(candidate, 'notes', 0));
+        if (status === 200) {
+            console.log(`Found data for ${candidate}`);
+            return candidate;
+        }
+        console.log(`  No data (HTTP ${status})`);
+    }
+    throw new Error(`No data found for the last ${maxDaysBack + 1} days starting from ${today}`);
+};
+
 const downloadNewData = async (tsvFolderPath, currentDate) => {
     try {
         if (!currentDate) {
-            currentDate = getCurrentDateInPST();
+            currentDate = await resolveLatestDate();
         }
 
-        const urls = [
-            `https://ton.twimg.com/birdwatch-public-data/${currentDate}/notes/notes-00000.zip`,
-            `https://ton.twimg.com/birdwatch-public-data/${currentDate}/notes/notes-00001.zip`,
-            `https://ton.twimg.com/birdwatch-public-data/${currentDate}/noteStatusHistory/noteStatusHistory-00000.zip`
-        ];
+        const noteUrls = await discoverFiles(currentDate, 'notes');
+        const statusUrls = await discoverFiles(currentDate, 'noteStatusHistory');
 
-        const allExtracted = [];
-        for (const url of urls) {
+        if (noteUrls.length === 0) throw new Error('No note files found for ' + currentDate);
+        if (statusUrls.length === 0) throw new Error('No note status files found for ' + currentDate);
+
+        console.log(`Found ${noteUrls.length} note file(s), ${statusUrls.length} status file(s)`);
+
+        const noteFiles = [];
+        const noteStatusFiles = [];
+
+        for (const url of noteUrls) {
             const extracted = await downloadAndExtractZip(url, tsvFolderPath);
-            allExtracted.push(...extracted);
+            noteFiles.push(...extracted.map(f => path.join(tsvFolderPath, f)));
         }
 
-        console.log(`Download complete. Files: ${allExtracted.join(', ')}`);
-        return allExtracted;
+        for (const url of statusUrls) {
+            const extracted = await downloadAndExtractZip(url, tsvFolderPath);
+            noteStatusFiles.push(...extracted.map(f => path.join(tsvFolderPath, f)));
+        }
+
+        console.log(`Download complete. Notes: ${noteFiles.map(f => path.basename(f)).join(', ')}, Status: ${noteStatusFiles.map(f => path.basename(f)).join(', ')}`);
+        return { noteFiles, noteStatusFiles };
     } catch (error) {
         console.error('Error downloading files:', error);
         throw error;

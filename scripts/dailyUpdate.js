@@ -10,12 +10,6 @@ const updateNoteBackupTable = require('./updateNoteBackupTable');
 const deleteFile = require('./deleteFile');
 
 const tsvFolderPath = path.join(__dirname, '..', 'tsv');
-
-const noteFiles = [
-    path.join(tsvFolderPath, 'notes-00000.tsv'),
-    path.join(tsvFolderPath, 'notes-00001.tsv'),
-];
-const noteStatusFile = path.join(tsvFolderPath, 'noteStatusHistory-00000.tsv');
 const authorBackupFile = path.join(tsvFolderPath, 'handlesBackup.tsv');
 
 function verifyFilesExist(label, files) {
@@ -33,12 +27,12 @@ function verifyFilesExist(label, files) {
     console.log('All verified.\n');
 }
 
-const dailyUpdate = async (currentDate) => {
+const dailyUpdate = async () => {
     try {
-        await downloadNewData(tsvFolderPath, currentDate);
-        verifyFilesExist('downloaded files', [...noteFiles, noteStatusFile]);
+        const { noteFiles, noteStatusFiles } = await downloadNewData(tsvFolderPath);
+        verifyFilesExist('downloaded files', [...noteFiles, ...noteStatusFiles]);
 
-        await updateNoteStatusTable(noteStatusFile);
+        await updateNoteStatusTable(noteStatusFiles);
         await backupHandles(authorBackupFile);
         verifyFilesExist('handle backup', [authorBackupFile]);
 
@@ -47,8 +41,7 @@ const dailyUpdate = async (currentDate) => {
         await updateNoteTable();
         await addHandles(10000);
 
-        for (const f of noteFiles) await deleteFile(f);
-        await deleteFile(noteStatusFile);
+        for (const f of [...noteFiles, ...noteStatusFiles]) await deleteFile(f);
 
         console.log('********************* Daily update complete. *********************');
         process.exit(0);
@@ -59,5 +52,5 @@ const dailyUpdate = async (currentDate) => {
     }
 };
 
-dailyUpdate("2026/02/18");
+dailyUpdate();
 module.exports = dailyUpdate;

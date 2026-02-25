@@ -8,24 +8,22 @@ The daily update script (`scripts/dailyUpdate.js`) refreshes all note and note s
 node scripts/dailyUpdate.js
 ```
 
-The date is hardcoded near the bottom of the file. Update it to the current date before running:
-
-```js
-dailyUpdate("2026/02/18");
-```
+The date is auto-detected. The script determines the current date in PST, probes the Community Notes dataset with a HEAD request, and falls back up to 3 previous days if the data isn't available yet (HTTP 404). No manual date editing is needed.
 
 ## Pipeline Steps
 
-### Step 1: Download Data (`downloadNewData.js`)
+### Step 1: Resolve Date & Download Data (`downloadNewData.js`)
 
-Downloads three ZIP files from the public Community Notes dataset and extracts the TSVs:
+Resolves the latest available dataset date by probing from today (PST) backward up to 3 days, then dynamically discovers how many files exist for each type by sending HEAD requests starting at index `00000` and incrementing until a 404 is returned. Downloads all discovered ZIP files and extracts the TSVs.
 
-- `notes-00000.zip` / `notes-00001.zip` — all community notes (~1.1 GB + ~1.4 MB)
-- `noteStatusHistory-00000.zip` — status history for all notes (~650 MB)
+File types discovered:
 
-Source URL pattern: `https://ton.twimg.com/birdwatch-public-data/{YYYY/MM/DD}/notes/notes-00000.zip`
+- `notes-{NNNNN}.zip` — community notes (currently 2 files, ~1.1 GB + ~1.4 MB)
+- `noteStatusHistory-{NNNNN}.zip` — status history (currently 1 file, ~650 MB)
 
-After extraction, the ZIP files are deleted. The TSVs are saved to the `tsv/` directory.
+Source URL pattern: `https://ton.twimg.com/birdwatch-public-data/{YYYY/MM/DD}/{prefix}/{prefix}-{NNNNN}.zip`
+
+After extraction, the ZIP files are deleted. The TSVs are saved to the `tsv/` directory. The list of downloaded file paths is returned to the pipeline so no filenames are hardcoded.
 
 ### Step 2: Verify Downloads
 
@@ -33,7 +31,7 @@ Before any database table is touched, all downloaded TSV files are checked for e
 
 ### Step 3: Update Note Status Table (`updateNoteStatusTable.js`)
 
-Truncates the `note_status` table and reloads it from `noteStatusHistory-00000.tsv`. This contains the current status (e.g. `CURRENTLY_RATED_HELPFUL`) for every note.
+Truncates the `note_status` table and reloads it from all discovered `noteStatusHistory-*.tsv` files. Accepts a single path or an array. This contains the current status (e.g. `CURRENTLY_RATED_HELPFUL`) for every note.
 
 ### Step 4: Backup Handles (`backupHandles.js`)
 
@@ -43,7 +41,7 @@ The backup file is verified for existence and non-zero size before proceeding.
 
 ### Step 5: Reload Notes Backup Table (`updateNoteBackupTable.js`)
 
-Truncates the `notes_backup` staging table and reloads it from both `notes-00000.tsv` and `notes-00001.tsv`. At this point, all `handle` values in `notes_backup` are NULL.
+Truncates the `notes_backup` staging table and reloads it from all discovered `notes-*.tsv` files. At this point, all `handle` values in `notes_backup` are NULL.
 
 ### Step 6: Restore Handles (`updateHandlesFromBackup.js`)
 
@@ -63,7 +61,7 @@ Queries the `notes` table for notes where `handle IS NULL` and `currentStatus = 
 
 ### Cleanup
 
-Deletes the downloaded TSV files (`notes-00000.tsv`, `notes-00001.tsv`, `noteStatusHistory-00000.tsv`). The handle backup file is intentionally kept as a safety net.
+Deletes all downloaded TSV files (notes and status history). The handle backup file is intentionally kept as a safety net.
 
 ## Safety Mechanisms
 
