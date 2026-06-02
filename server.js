@@ -11,7 +11,7 @@ const tweetAuthorRoutes = require('./routes/tweetAuthorRoutes');
 app.use('/api', tweetAuthorRoutes);
 
 app.get('/', (req, res) => {
-  res.send('Hello World! deploy-check ' + (process.env.HEROKU_RELEASE_VERSION || 'unknown'));
+  res.send('Hello World!');
 });
 
 app.listen(port, () => {
