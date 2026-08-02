@@ -2,10 +2,22 @@ name: Daily Update
 
 on:
   schedule:
-    - cron: '0 8 * * *' # 12:00 AM PST
+    - cron: '0 8 * * *' # 12:00 AM PST / 8:00 AM UTC
   workflow_dispatch:
 
 jobs:
+  # GitHub disables scheduled workflows on public repos after 60 days of
+  # inactivity. Re-enable via API on each schedule run so the cron keeps firing
+  # even when there are no pushes. See:
+  # https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows
+  workflow-keepalive:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - uses: liskin/gh-workflow-keepalive@v1
+
   daily-update:
     runs-on: ubuntu-latest
     timeout-minutes: 120
