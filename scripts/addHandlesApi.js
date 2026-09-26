@@ -14,6 +14,9 @@ let NOT_FOUND = 'not found once';
 
 const BATCH_SIZE = 100; // X API max IDs per request
 const DELAY_BETWEEN_BATCHES_MS = 1000;
+// Auth and billing failures affect every request, so continuing would only
+// burn through the remaining notes without resolving anything.
+const FATAL_STATUSES = new Set([401, 402, 403]);
 
 async function fetchTweetAuthors(tweetIds) {
     const res = await axios.get('https://api.x.com/2/tweets', {
@@ -84,37 +87,44 @@ async function addHandles(max_notes = 3500) {
             const batch = notesToProcess.slice(i, i + BATCH_SIZE);
             const tweetIds = batch.map(note => note.tweetId.toString());
 
-            let tweetHandleMap = {};
+            let tweetHandleMap = null;
 
             try {
                 tweetHandleMap = await fetchTweetAuthors(tweetIds);
             } catch (error) {
+                const status = error.response?.status;
                 if (error.response) {
-                    console.error(`Batch ${batchNum}/${totalBatches} API error:`, error.response.status, error.response.data);
-
-                    // If rate limited, wait and retry once
-                    if (error.response.status === 429) {
-                        const resetTime = error.response.headers['x-rate-limit-reset'];
-                        const waitMs = resetTime
-                            ? (parseInt(resetTime) * 1000 - Date.now()) + 1000
-                            : 60000;
-                        console.log(`Rate limited. Waiting ${Math.ceil(waitMs / 1000)}s...`);
-                        await sleep(waitMs);
-
-                        try {
-                            tweetHandleMap = await fetchTweetAuthors(tweetIds);
-                        } catch (retryError) {
-                            console.error(`Batch ${batchNum} retry failed:`, retryError.response?.data || retryError.message);
-                        }
-                    }
+                    console.error(`Batch ${batchNum}/${totalBatches} API error:`, status, error.response.data);
                 } else {
                     console.error(`Batch ${batchNum}/${totalBatches} error:`, error.message);
                 }
 
-                // Any tweets not resolved after errors get marked not found
-                if (Object.keys(tweetHandleMap).length === 0) {
-                    batchErrors++;
+                if (FATAL_STATUSES.has(status)) {
+                    throw new Error(`X API returned ${status}; stopping so unresolved notes stay NULL and are retried next run`);
                 }
+
+                if (status === 429) {
+                    const resetTime = error.response.headers['x-rate-limit-reset'];
+                    const waitMs = resetTime
+                        ? (parseInt(resetTime) * 1000 - Date.now()) + 1000
+                        : 60000;
+                    console.log(`Rate limited. Waiting ${Math.ceil(waitMs / 1000)}s...`);
+                    await sleep(waitMs);
+
+                    try {
+                        tweetHandleMap = await fetchTweetAuthors(tweetIds);
+                    } catch (retryError) {
+                        console.error(`Batch ${batchNum} retry failed:`, retryError.response?.data || retryError.message);
+                    }
+                }
+            }
+
+            // A failed request says nothing about whether the tweets exist, so
+            // leave the handles NULL for the next run instead of marking them.
+            if (tweetHandleMap === null) {
+                batchErrors++;
+                console.log(`Batch ${batchNum}/${totalBatches} skipped; ${batch.length} notes left for the next run`);
+                continue;
             }
 
             for (const note of batch) {
@@ -147,6 +157,7 @@ async function addHandles(max_notes = 3500) {
 
     } catch (error) {
         console.error(error);
+        throw error;
     }
 }
 
