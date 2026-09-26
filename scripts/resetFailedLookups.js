@@ -43,8 +43,8 @@ async function resetFailedLookups(argv = []) {
 
     const [{ matched }] = await sequelize.query(
         `SELECT COUNT(*)::int AS matched FROM notes
-         WHERE handle = :sentinel AND "tweetId"::text IN (:tweetIds)`,
-        { replacements: { sentinel: SENTINEL, tweetIds }, type: QueryTypes.SELECT }
+         WHERE handle = :sentinel AND "tweetId" = ANY(CAST(:tweetIds AS bigint[]))`,
+        { replacements: { sentinel: SENTINEL, tweetIds: `{${tweetIds.join(',')}}` }, type: QueryTypes.SELECT }
     );
     console.log(`Notes currently marked '${SENTINEL}' for these tweets: ${matched}`);
 
@@ -55,8 +55,8 @@ async function resetFailedLookups(argv = []) {
 
     const [, meta] = await sequelize.query(
         `UPDATE notes SET handle = NULL
-         WHERE handle = :sentinel AND "tweetId"::text IN (:tweetIds)`,
-        { replacements: { sentinel: SENTINEL, tweetIds } }
+         WHERE handle = :sentinel AND "tweetId" = ANY(CAST(:tweetIds AS bigint[]))`,
+        { replacements: { sentinel: SENTINEL, tweetIds: `{${tweetIds.join(',')}}` } }
     );
     console.log(`Reset ${meta.rowCount} notes to NULL. The next addHandlesApi.js run will retry them.`);
     return meta.rowCount;
