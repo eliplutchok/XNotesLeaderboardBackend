@@ -4,6 +4,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const axios = require('axios');
 const { sequelize, Note, NoteStatus } = require('../models/AllModels');
 const { Sequelize } = require('sequelize');
+const { ensureTweetAuthorsTable, recordTweetAuthors, statusFromErrorTitle } = require('./tweetAuthors');
 
 let HANDLES_TO_PROCESS = null;
 let NOT_FOUND = 'not found once';
@@ -24,27 +25,55 @@ async function fetchTweetAuthors(tweetIds) {
             ids: tweetIds.join(','),
             'tweet.fields': 'author_id',
             'expansions': 'author_id',
-            'user.fields': 'username'
+            'user.fields': 'username,created_at'
         },
         headers: { Authorization: `Bearer ${process.env.X_API_TOKEN}` }
     });
 
     const userMap = {};
-    if (res.data.includes && res.data.includes.users) {
-        for (const user of res.data.includes.users) {
-            userMap[user.id] = user.username;
-        }
+    for (const user of res.data.includes?.users || []) {
+        userMap[user.id] = user;
     }
 
     const tweetHandleMap = {};
-    if (res.data.data) {
-        for (const tweet of res.data.data) {
-            const username = userMap[tweet.author_id];
-            tweetHandleMap[tweet.id] = username ? `@${username}` : null;
+    const authorRows = new Map();
+    for (const tweet of res.data.data || []) {
+        const user = userMap[tweet.author_id];
+        const handle = user ? `@${user.username}` : null;
+        tweetHandleMap[tweet.id] = handle;
+        authorRows.set(tweet.id, {
+            tweetId: tweet.id,
+            authorId: tweet.author_id,
+            handle,
+            authorCreatedAt: user?.created_at,
+            source: 'tweet_lookup',
+            status: 'found'
+        });
+    }
+
+    for (const error of res.data.errors || []) {
+        if (error.parameter !== 'ids' || !error.value || authorRows.has(error.value)) continue;
+        authorRows.set(error.value, {
+            tweetId: error.value,
+            source: 'tweet_lookup',
+            status: statusFromErrorTitle(error.title),
+            errorTitle: error.title,
+            errorDetail: error.detail
+        });
+    }
+
+    for (const tweetId of tweetIds) {
+        if (!authorRows.has(tweetId)) {
+            authorRows.set(tweetId, {
+                tweetId,
+                source: 'tweet_lookup',
+                status: 'error',
+                errorDetail: 'missing from both data and errors in the X response'
+            });
         }
     }
 
-    return tweetHandleMap;
+    return { tweetHandleMap, authorRows: [...authorRows.values()] };
 }
 
 async function sleep(ms) {
@@ -55,6 +84,7 @@ async function addHandles(max_notes = 3500) {
     try {
         await sequelize.authenticate();
         console.log('Connected to database');
+        await ensureTweetAuthorsTable();
 
         const notes = await Note.findAll({
             include: [{
@@ -85,12 +115,12 @@ async function addHandles(max_notes = 3500) {
         for (let i = 0; i < notesToProcess.length; i += BATCH_SIZE) {
             const batchNum = Math.floor(i / BATCH_SIZE) + 1;
             const batch = notesToProcess.slice(i, i + BATCH_SIZE);
-            const tweetIds = batch.map(note => note.tweetId.toString());
+            const tweetIds = [...new Set(batch.map(note => note.tweetId.toString()))];
 
-            let tweetHandleMap = null;
+            let result = null;
 
             try {
-                tweetHandleMap = await fetchTweetAuthors(tweetIds);
+                result = await fetchTweetAuthors(tweetIds);
             } catch (error) {
                 const status = error.response?.status;
                 if (error.response) {
@@ -112,7 +142,7 @@ async function addHandles(max_notes = 3500) {
                     await sleep(waitMs);
 
                     try {
-                        tweetHandleMap = await fetchTweetAuthors(tweetIds);
+                        result = await fetchTweetAuthors(tweetIds);
                     } catch (retryError) {
                         console.error(`Batch ${batchNum} retry failed:`, retryError.response?.data || retryError.message);
                     }
@@ -121,11 +151,16 @@ async function addHandles(max_notes = 3500) {
 
             // A failed request says nothing about whether the tweets exist, so
             // leave the handles NULL for the next run instead of marking them.
-            if (tweetHandleMap === null) {
+            if (result === null) {
                 batchErrors++;
                 console.log(`Batch ${batchNum}/${totalBatches} skipped; ${batch.length} notes left for the next run`);
                 continue;
             }
+
+            // Recorded before the handles so a failure here leaves the notes
+            // NULL and the whole batch is retried, rather than losing the IDs.
+            await recordTweetAuthors(result.authorRows);
+            const { tweetHandleMap } = result;
 
             for (const note of batch) {
                 const tweetId = note.tweetId.toString();
@@ -168,3 +203,4 @@ if (require.main === module) {
 }
 
 module.exports = addHandles;
+module.exports.fetchTweetAuthors = fetchTweetAuthors;

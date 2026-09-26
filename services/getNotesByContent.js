@@ -31,7 +31,7 @@ async function getNotesByContent(keywords, search = 'broadest', limit = 500) {
         const notes = await Note.findAll({
             where: {
                 handle: {
-                    [Op.ne]: 'not found'
+                    [Op.notIn]: ['not found once', 'not found twice', 'not found', 'not found thrice']
                 },
                 summary: searchCondition
             },
