@@ -3,7 +3,8 @@
  * the outcome of the latest lookup. Unlike `notes`, this table is never
  * truncated by the daily update, so IDs survive the nightly reload.
  *
- *   source  how authorId was obtained: tweet_lookup | handle_lookup | partner
+ *   source  how authorId was obtained: tweet_lookup | handle_lookup |
+ *           reply_lookup | partner
  *   status  outcome of the latest check: found | not_found | unauthorized |
  *           handle_reassigned | error
  *
@@ -28,8 +29,8 @@ const CREATE_TABLE_SQL = `
     CREATE INDEX IF NOT EXISTS tweet_authors_author_id_idx ON tweet_authors ("authorId");
 `;
 
-// A known author is never erased by a later failed lookup, and a handle
-// lookup never overrides a row that came from looking up the tweet itself.
+// A known author is never erased by a later failed lookup, and an indirect
+// lookup (handle, reply) never overrides an author found from the tweet itself.
 const UPSERT_SQL = `
     INSERT INTO tweet_authors
         ("tweetId", "authorId", handle, "authorCreatedAt", source, status, "errorTitle", "errorDetail")
@@ -46,7 +47,9 @@ const UPSERT_SQL = `
         "errorTitle"      = EXCLUDED."errorTitle",
         "errorDetail"     = EXCLUDED."errorDetail",
         "lastLookedUpAt"  = now()
-    WHERE EXCLUDED.source = 'tweet_lookup' OR tweet_authors.source <> 'tweet_lookup'
+    WHERE EXCLUDED.source = 'tweet_lookup'
+       OR tweet_authors.source <> 'tweet_lookup'
+       OR tweet_authors."authorId" IS NULL
 `;
 
 async function ensureTweetAuthorsTable() {
